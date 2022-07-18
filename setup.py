@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""VTUinterface: a python PVD/VTU API"""
+"""VTUinterface: a python XDMF API"""
 
 import os
 import codecs
@@ -25,7 +25,7 @@ def find_version(*file_paths):
         return version_match.group(1)
     raise RuntimeError("Unable to find version string.")
 
-VERSION = find_version("NetCDFInterpolate", "_version.py")
+VERSION = find_version("InterpolateXDMF", "_version.py")
 
 
 ###############################################################################
@@ -34,13 +34,13 @@ README = open("README.md").read()
 
 
 
-setup(name="NetCDFInterpolate",
+setup(name="InterpolateXDMF",
       version=VERSION,
       maintainer="Jörg Buchwald",
       maintainer_email="joerg_buchwald@ufz.de",
       author="Jörg Buchwald",
       author_email="joerg.buchwald@ufz.de",
-      url="https://github.com/joergbuchwald/NetCDFInterpolate",
+      url="https://github.com/joergbuchwald/InterpolateXDMF",
       long_description=README,
       long_description_content_type="text/markdown",
       classifiers=["Intended Audience :: Science/Research",
@@ -49,10 +49,10 @@ setup(name="NetCDFInterpolate",
           "Topic :: Scientific/Engineering :: Mathematics",
           "License :: OSI Approved :: MIT License",
           "Programming Language :: Python :: 3",
-          "Programming Language :: Python :: 3.8"],
+          "Programming Language :: Python :: 3.10"],
       license="BSD-3 -  see LICENSE.txt",
       platforms=["Windows", "Linux", "Solaris", "Mac OS-X", "Unix"],
       include_package_data=True,
-      install_requires=["netCDF4", "numpy", "pandas", "scipy"],
-      py_modules=["NetCDFInterpolate"],
-      package_dir={'': 'NetCDFInterpolate'})
+      install_requires=["numpy", "pandas", "meshio", "VTUInterface", "lxml", "vtk"],
+      py_modules=["InterpolateXDMF"],
+      package_dir={'': 'InterpolateXDMF'})
