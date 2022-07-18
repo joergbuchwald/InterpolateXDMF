@@ -21,6 +21,7 @@ from vtk.util.numpy_support import vtk_to_numpy
 from vtk.util.numpy_support import numpy_to_vtk
 import meshio
 import vtuIO
+import time
 
 class XDMFreader:
     """
@@ -29,19 +30,22 @@ class XDMFreader:
     """
     def __init__(self, filename, nneighbors=20, dim=3, one_d_axis=0, two_d_planenormal=2,
                                                             interpolation_backend="scipy"):
+        time0 = time.time()
         self.filename = filename
         self._fix_xdmf_file()
         self.dim = dim
         self.one_d_axis = one_d_axis
         self.two_d_planenormal = two_d_planenormal
         self.interpolation_backend = interpolation_backend
+        self.timesteps = []
         with meshio.xdmf.TimeSeriesReader(filename) as reader:
             self.points, cells = reader.read_points_cells()
             self.h5_data = {}
-            self.timesteps = range(reader.num_steps)
-            for t in self.timesteps:
+            timesteps = range(reader.num_steps)
+            for t in timesteps:
                 self.h5_data[t]  = reader.read_data(t)
-        # Points
+                self.timesteps.append(self.h5_data[t][0])
+        self.timesteps = np.array(self.timesteps)
         if self.points.shape[1] == 2:
             self.points = np.hstack([self.points, np.zeros((len(self.points), 1))])
         vtk_points = vtk.vtkPoints()
@@ -70,10 +74,12 @@ class XDMFreader:
                 vtk.util.numpy_support.numpy_to_vtk(cell_offsets, deep=1,
                 array_type=vtk.vtkIdTypeArray().GetDataType()), vtk_cells, )
         self.data_objects = []
-        for t in self.timesteps:
+        for t in timesteps:
             self.data_objects.append(vtuIOobject(self.output,self.points, self.h5_data[t], nneighbors=nneighbors,
                 dim=dim, one_d_axis=one_d_axis, two_d_planenormal=two_d_planenormal,
                 interpolation_backend=interpolation_backend))
+        time1 = time.time()
+        print(f"time constructor: {time1-time0}")
     def _fix_xdmf_file(self):
         self.tree = ET.parse(self.filename)
         grid_zero = self.tree.find("./Domain/Grid/Grid")
@@ -146,16 +152,194 @@ class XDMFreader:
         return list(self.h5_data[timestep][1].keys())
     def get_cell_field_names(self, timestep=0):
         return list(self.h5_data[timestep][2].keys())
-    def read_time_slice(self, fieldname, time, interpolation_method="linear"):
-        pass
-    def read_data(self, fieldname, time,pts=None):
-        pass
-    def read_set_data(self, fieldname, time, pointsetarray = None, interpolation_method="linear"):
-        pass
-    def read_time_series(self, fieldname, pts=None, interpolation_method="linear"):
-        pass
-    def read_aggregate(self):
-        pass
+    def read_time_slice(self, time, fieldname):
+        """
+        Print field "fieldname" at time "time".
+
+        Parameters
+        ----------
+        time : `float`
+        fieldname : `str`
+        """
+        for i, ts in enumerate(self.timesteps):
+            if time == ts:
+                field = self.data_objects[i].get_point_field(fieldname)
+        else:
+            time1 = 0.0
+            time2 = 0.0
+            timestep = 0
+            for i, ts in enumerate(self.timesteps):
+                try:
+                    if ts < time < self.timesteps[i+1]:
+                        time1 = ts
+                        time2 = self.timesteps[i+1]
+                        timestep = i
+                except IndexError:
+                    print("time is out of range")
+            if (time1 == 0.0) and (time2 == 0.0):
+                print("time is out of range")
+            else:
+                vtu1 = self.data_objects[timestep]
+                vtu2 = self.data_objects[timestep+1]
+                field1 = vtu1.get_point_field(fieldname)
+                field2 = vtu2.get_point_field(fieldname)
+                fieldslope = (field2-field1)/(time2-time1)
+                field = field1 + fieldslope * (time-time1)
+        return field
+    def read_set_data(self, time, fieldname, pointsetarray = None, data_type="point", interpolation_method="linear"):
+        """
+        Get data of field "fieldname" at time "time" alon a given "pointsetarray".
+
+        Parameters
+        ----------
+        time : `float`
+        fieldname : `str`
+        pointsetarray : `list`, `numpy.ndarray` or `str`
+                        containing a list of 3-tuples
+        interpolation_method : `str`
+                               default: 'linear'
+        """
+        if pointsetarray is None:
+            raise RuntimeError("No pointsetarray given.")
+        for i, ts in enumerate(self.timesteps):
+            if time == ts:
+                field = self.data_objects[i].get_set_data(fieldname, pointsetarray, data_type=data_type, interpolation_method=interpolation_method)
+        else:
+            time1 = 0.0
+            time2 = 0.0
+            timestep = 0
+            for i, ts in enumerate(self.timesteps):
+                try:
+                    if ts < time < self.timesteps[i+1]:
+                        time1 = ts
+                        time2 = self.timesteps[i+1]
+                        timestep = i
+                except IndexError:
+                    print("time is out of range")
+            if (time1 == 0.0) and (time2 == 0.0):
+                print("time is out of range")
+            else:
+                vtu1 = self.data_objects[timestep]
+                vtu2 = self.data_objects[timestep+1]
+                field1 = vtu1.get_set_data(fieldname, pointsetarray, data_type=data_type, interpolation_method=interpolation_method)
+                field2 = vtu2.get_set_data(fieldname, pointsetarray, data_type=data_type, interpolation_method=interpolation_method)
+                fieldslope = (field2-field1)/(time2-time1)
+                field = field1 + fieldslope * (time-time1)
+        return field
+    def read_time_series(self, fieldname, pts=None, data_type="point", interpolation_method="linear"):
+        """
+        Return time series data of field "fieldname" at points pts.
+        Also a list of fieldnames can be provided as "fieldname"
+
+        Parameters
+        ----------
+        fieldname : `str`
+        pts : `dict`, optional
+        data_type : `str` optional
+              "point" or "cell"
+        interpolation_method : `str`, optional
+                               default: 'linear
+        """
+        if pts is None:
+            raise RuntimeError("No points given")
+        resp_t = {}
+        for pt in pts:
+            if isinstance(fieldname, str):
+                resp_t[pt] = []
+            elif isinstance(fieldname, list):
+                resp_t[pt] = {}
+                for field in fieldname:
+                    resp_t[pt][field] = []
+        for i, _ in enumerate(self.timesteps):
+            vtu = self.data_objects[i]
+            if self.interpolation_backend == "scipy":
+                if i == 0:
+                    nb = vtu.get_neighbors(pts, data_type=data_type)
+                if isinstance(fieldname, str):
+                    data = vtu.get_data_scipy(nb, pts, fieldname, data_type=data_type,
+                            interpolation_method=interpolation_method)
+                    for pt in pts:
+                        resp_t[pt].append(data[pt])
+                elif isinstance(fieldname, list):
+                    data = {}
+                    for field in fieldname:
+                        data[field] = vtu.get_data_scipy(nb, pts, field, data_type=data_type,
+                                interpolation_method=interpolation_method)
+                    for pt in pts:
+                        for field in fieldname:
+                            resp_t[pt][field].append(data[field][pt])
+            elif self.interpolation_backend == "vtk":
+                if data_type != "point":
+                    raise RuntimeError("reading cell data is not working with vtk backend yet")
+                if isinstance(fieldname, str):
+                    data = vtk_to_numpy(
+                        vtu.get_data_vtk(pts, interpolation_method=interpolation_method).GetArray(fieldname))
+                    for j, pt in enumerate(pts):
+                        resp_t[pt].append(data[j])
+                elif isinstance(fieldname, list):
+                    data = {}
+                    vtkdata = vtu.get_data_vtk(pts, interpolation_method=interpolation_method)
+                    for field in fieldname:
+                        data[field] = vtk_to_numpy(vtkdata.GetArray(fieldname))
+                    for j, pt in enumerate(pts):
+                        for field in fieldname:
+                            resp_t[pt][field].append(data[field][j])
+        resp_t_array = {}
+        for pt, field in resp_t.items():
+            if isinstance(fieldname, str):
+                resp_t_array[pt] = np.array(field)
+            elif isinstance(fieldname, list):
+                resp_t_array[pt] = {}
+                for field_, fieldarray in resp_t[pt].items():
+                    resp_t_array[pt][field_] = np.array(fieldarray)
+        return resp_t_array
+
+    def read_aggregate(self, fieldname, agg_fct, data_type="point", pointsetarray=None):
+        """
+        Return time series data of an aggregate function for field "fieldname".
+
+        Parameters
+        ----------
+        fieldname : `str` or `list`
+        agg_fct : `str`,
+              can be: "min", "max" or "mean"
+        data_type : `str` optional
+              "point" or "cell"
+        pointsetarray : `str`, `list` or `numpy.ndarray`
+                        defines a submesh
+                        if `str` pointsetarray is construed as filename containing the mesh
+        """
+        agg_fcts = {"min": np.min,
+                    "max": np.max,
+                    "mean": np.mean}
+        resp_t = {}
+        if isinstance(fieldname, str):
+            resp_t = []
+        elif isinstance(fieldname, list):
+            resp_t = {}
+            for field in fieldname:
+                resp_t[field] = []
+        if not pointsetarray is None:
+            pointsetarray = np.array(pointsetarray)
+        submeshindices = None
+        for i, _ in enumerate(self.timesteps):
+            vtu = self.data_objects[i]
+            if (i == 0) and (not pointsetarray is None):
+                submeshindices = vtu.get_nearest_indices(pointsetarray)
+            if isinstance(fieldname, str):
+                if data_type == "point":
+                    data = agg_fcts[agg_fct](vtu.get_point_field(fieldname)[submeshindices])
+                elif data_type == "cell":
+                    data = agg_fcts[agg_fct](vtu.get_cell_field(fieldname)[submeshindices])
+                resp_t.append(data)
+            elif isinstance(fieldname, list):
+                for field in fieldname:
+                    if data_type == "point":
+                        data = agg_fcts[agg_fct](vtu.get_point_field(field)[submeshindices])
+                    elif data_type == "cell":
+                        data = agg_fcts[agg_fct](vtu.get_cell_field(field)[submeshindices])
+                    resp_t[field].append(data)
+        return resp_t
 
 
 
