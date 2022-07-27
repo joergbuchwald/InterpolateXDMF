@@ -39,7 +39,7 @@ class XDMFreader:
         self.interpolation_backend = interpolation_backend
         self.timesteps = []
         with meshio.xdmf.TimeSeriesReader(filename) as reader:
-            self.points, cells = reader.read_points_cells()
+            self.points, self.cells = reader.read_points_cells()
             self.h5_data = {}
             timesteps = range(reader.num_steps)
             for t in timesteps:
@@ -55,7 +55,7 @@ class XDMFreader:
         cell_types = np.array([], dtype=np.ubyte)
         cell_offsets = np.array([], dtype=int)
         cell_conn = np.array([], dtype=int)
-        for cell in cells:
+        for cell in self.cells:
             meshio_type = cell.type
             data = cell.data
             vtk_type = meshio._vtk_common.meshio_to_vtk_type[meshio_type]
@@ -340,6 +340,27 @@ class XDMFreader:
                         data = agg_fcts[agg_fct](vtu.get_cell_field(field)[submeshindices])
                     resp_t[field].append(data)
         return resp_t
+    def write_pvd(self, filename):
+        root = ET.Element("VTKFile")
+        root.attrib["type"] = "Collection"
+        root.attrib["version"] = "0.1"
+        root.attrib["byte_order"] = "LittleEndian"
+        root.attrib["compressor"] = "vtkZLibDataCompressor"
+        collection = ET.SubElement(root,"Collection")
+        timestepselements = []
+        #pvdwriter
+        for i, timestep in enumerate(self.timesteps):
+            timestepselements.append(ET.SubElement(collection, "DataSet")
+            timestepselements[-1].attrib["timestep"] = str(timestep)
+            timestepselements[-1].attrib["group"] = ""
+            timestepselements[-1].attrib["part"] = "0"
+            timestepselements[-1].attrib["file"] = f"{filename.split('.')[0]}_{i}_{timestep}.vtu"
+            mesh = meshio.Mesh(self.points, self.cells,
+                        point_data=self.h5_data[i][1],
+                        cell_data=self.h5_data[i][2])
+            mesh.write(timestepselements[-1].attrib["file"])
+        tree = ET.ElementTree(root)
+        tree.write(filename, encoding="ISO-8859-1", xml_declaration=True, pretty_print=True)
 
 
 
