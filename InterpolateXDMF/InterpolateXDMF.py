@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-NetCDFInterpolate is a python package for easy accessing VTU/PVD files as
+InterpolateXDMF is a python package for easy accessing XDMF/HDF5 files as
 outputed by Finite Element software like OpenGeoSys. It uses the VTK python
 wrapper and linear interpolation between time steps and grid points access
 any points in and and time within the simulation domain.
@@ -23,10 +23,23 @@ import meshio
 import vtuIO
 import time
 
-class XDMFreader:
+class XDMFReader:
     """
     Interface for XDMF data
 
+    Parameters
+    ----------
+    filename : `str`
+    nneighbors : `int`, optional
+                 default: 20
+    dim : `int`, optional
+          default: 3
+    one_d_axis : `int`
+                 between 0 and 2, default: 0
+    two_d_planenormal : `int`
+                 between 0 and 2, default: 2
+    interpolation_backend : `str`
+                 scipy or vtk
     """
     def __init__(self, filename, nneighbors=20, dim=3, one_d_axis=0, two_d_planenormal=2,
                                                             interpolation_backend="scipy"):
@@ -75,11 +88,12 @@ class XDMFreader:
                 array_type=vtk.vtkIdTypeArray().GetDataType()), vtk_cells, )
         self.data_objects = []
         for t in timesteps:
-            self.data_objects.append(vtuIOobject(self.output,self.points, self.h5_data[t], nneighbors=nneighbors,
+            self.data_objects.append(VTUIOObject(self.output,self.points, self.h5_data[t], nneighbors=nneighbors,
                 dim=dim, one_d_axis=one_d_axis, two_d_planenormal=two_d_planenormal,
                 interpolation_backend=interpolation_backend))
         time1 = time.time()
         print(f"time constructor: {time1-time0}")
+
     def _fix_xdmf_file(self):
         self.tree = ET.parse(self.filename)
         grid_zero = self.tree.find("./Domain/Grid/Grid")
@@ -145,12 +159,43 @@ class XDMFreader:
         return cell_center_points
 
     def get_point_field(self, fieldname, timestep=0):
+        """
+        Return vtu point field as numpy array.
+
+        Parameters
+        ----------
+        fieldname : `str`
+        timestep : `int`
+        """
         return self.h5_data[timestep][1][fieldname]
     def get_cell_field(self, fieldname, timestep=0):
+        """
+        Return vtu cell field as numpy array.
+
+        Parameters
+        ----------
+        fieldname : `str`
+        timestep : `int`
+        """
         return self.h5_data[timestep][2][fieldname]
     def get_point_field_names(self, timestep=0):
+        """
+        Get names of all point fields in the vtu file.
+
+        Parameters
+        ----------
+        timestep : `int`, optional
+                    default: 0
+        """
         return list(self.h5_data[timestep][1].keys())
     def get_cell_field_names(self, timestep=0):
+        """
+        Get names of all cell fields in the vtu file.
+        Parameters
+        ----------
+        timestep : `int`, optional
+                    default: 0
+        """
         return list(self.h5_data[timestep][2].keys())
     def read_time_slice(self, time, fieldname):
         """
@@ -341,6 +386,13 @@ class XDMFreader:
                     resp_t[field].append(data)
         return resp_t
     def write_pvd(self, filename):
+        """
+        Writes data to PVD/VTU
+
+        Parameters
+        ----------
+        filename : `str`
+        """
         root = ET.Element("VTKFile")
         root.attrib["type"] = "Collection"
         root.attrib["version"] = "0.1"
@@ -350,7 +402,7 @@ class XDMFreader:
         timestepselements = []
         #pvdwriter
         for i, timestep in enumerate(self.timesteps):
-            timestepselements.append(ET.SubElement(collection, "DataSet")
+            timestepselements.append(ET.SubElement(collection, "DataSet"))
             timestepselements[-1].attrib["timestep"] = str(timestep)
             timestepselements[-1].attrib["group"] = ""
             timestepselements[-1].attrib["part"] = "0"
@@ -364,7 +416,7 @@ class XDMFreader:
 
 
 
-class vtuIOobject(vtuIO.VTUIO):
+class VTUIOObject(vtuIO.VTUIO):
     def __init__(self, obj, points, h5_data, nneighbors=20, dim=3, one_d_axis=0, two_d_planenormal=2,
                                                         interpolation_backend="scipy"):
         self.output = obj
