@@ -88,11 +88,11 @@ class XDMFReader:
                 array_type=vtk.vtkIdTypeArray().GetDataType()), vtk_cells, )
         self.data_objects = []
         for t in timesteps:
-            self.data_objects.append(VTUIOObject(self.output,self.points, self.h5_data[t], nneighbors=nneighbors,
-                dim=dim, one_d_axis=one_d_axis, two_d_planenormal=two_d_planenormal,
-                interpolation_backend=interpolation_backend))
-        time1 = time.time()
-        print(f"time constructor: {time1-time0}")
+            self.data_objects.append(VTUIOObject(self.output, self.points, self.h5_data[t], nneighbors=nneighbors,
+                    dim=dim, one_d_axis=one_d_axis, two_d_planenormal=two_d_planenormal,
+                    interpolation_backend=interpolation_backend))
+        #time1 = time.time()
+        #print(f"time constructor: {time1-time0}")
 
     def _fix_xdmf_file(self):
         self.tree = ET.parse(self.filename)
@@ -419,9 +419,11 @@ class XDMFReader:
 class VTUIOObject(vtuIO.VTUIO):
     def __init__(self, obj, points, h5_data, nneighbors=20, dim=3, one_d_axis=0, two_d_planenormal=2,
                                                         interpolation_backend="scipy"):
-        self.output = obj
-        #self.pdata = self.output.GetPointData()
-        #self.cdata = self.output.GetCellData()
+        if interpolation_backend == "vtk":
+            self.output = vtk.vtkUnstructuredGrid()
+            self.output.ShallowCopy(obj)
+        else:
+            self.output = obj
         self.points = points
         self._cell_center_points = None
         self.dim = dim
@@ -437,6 +439,24 @@ class VTUIOObject(vtuIO.VTUIO):
             self.points = np.delete(self.points, two_d_planenormal, 1)
         self.interpolation_backend = interpolation_backend
         self.h5_data = h5_data
+        if interpolation_backend == "vtk":
+            self.pdata = self.output.GetPointData()
+            self.cdata = self.output.GetCellData()
+            cellfieldnames = self.get_cell_field_names()
+            for cellfield in cellfieldnames:
+                q = self.cdata.AddArray(numpy_to_vtk(self.get_cell_field(cellfield)))
+                self.cdata.GetArray(q).SetName(cellfield)
+            pointfieldnames = self.get_point_field_names()
+            for pointfield in pointfieldnames:
+                q = self.pdata.AddArray(numpy_to_vtk(self.get_point_field(pointfield)))
+                self.pdata.GetArray(q).SetName(pointfield)
+        # interpolation settings
+        self.interpolation_backend = interpolation_backend
+        self.vtk_gaussian_sharpness = 4.0
+        self.vtk_gaussian_radius = 0.5
+        self.vtk_gaussian_footprint_to_n_closest = False
+        self.vtk_shepard_power_parameter = 2.0
+        self.vtk_shepard_radius = 0.5
 
     def get_point_field(self, fieldname):
         """
