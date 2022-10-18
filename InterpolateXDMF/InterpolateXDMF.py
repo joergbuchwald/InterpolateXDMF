@@ -430,13 +430,8 @@ class VTUIOObject(vtuIO.VTUIO):
         self.nneighbors = nneighbors
         self.one_d_axis=one_d_axis
         self.two_d_planenormal = two_d_planenormal
-        if self.dim == 1:
-            self.one_d_axis = one_d_axis
-            self.points = self.points[:,one_d_axis]
-        if self.dim == 2:
-            self.plane = [0, 1, 2]
-            self.plane.pop(two_d_planenormal)
-            self.points = np.delete(self.points, two_d_planenormal, 1)
+        self._plane = [0, 1, 2]
+        self._plane.pop(two_d_planenormal)
         self.interpolation_backend = interpolation_backend
         self.h5_data = h5_data
         if interpolation_backend == "vtk":
